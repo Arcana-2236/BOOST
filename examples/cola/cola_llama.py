@@ -17,6 +17,7 @@
 from typing import Dict, List, Optional, Union, Tuple
 import os
 import math
+import hashlib
 
 import torch
 import torch.distributed as torch_dist
@@ -111,6 +112,12 @@ def _cola_act_trace_maybe_save() -> None:
     if save_once and os.path.exists(path):
         return
     torch.save(_COLA_ACT_TRACE, path)
+
+
+def _cola_param_init_seed(base_seed: int, full_param_name: str) -> int:
+    # Deterministic, TP-size-invariant seed per parameter.
+    digest = hashlib.sha256(f"{base_seed}:{full_param_name}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], byteorder="little", signed=False) % (2**31 - 1)
 
 
 class IdentityRMSNorm(nn.Module):
@@ -1758,7 +1765,7 @@ class ColaLlamaForTraining(NanotronModel):
         # Fix the root_model
         module_id_to_prefix[id(model)] = ""
 
-        for param_name, param in model.named_parameters():
+        for param_name, param in list(model.named_parameters()):
             assert isinstance(param, NanotronParameter)
 
             module_name, param_name = param_name.rsplit(".", 1)
@@ -1781,8 +1788,61 @@ class ColaLlamaForTraining(NanotronModel):
             cola_std = self.get_cola_std(module, module_name)
             if cola_std is not None:
                 parametrizator.std = cola_std
-            
-            parametrizator.parametrize(param_name, module)
+
+            # TP-consistent initialization:
+            # 1) deterministic per-parameter seed (independent of traversal/RNG history)
+            # 2) for TP-sharded params, initialize full tensor then copy local shard
+            should_init_from_unsharded = (
+                self.parallel_context.tp_pg.size() > 1
+                and param.is_sharded
+                and param.get_sharded_info().is_tp_sharded(self.parallel_context)
+            )
+            old_cpu_rng_state = torch.random.get_rng_state()
+            old_cuda_rng_state = torch.cuda.get_rng_state("cuda") if torch.cuda.is_available() else None
+            per_param_seed = _cola_param_init_seed(base_seed=config.general.seed, full_param_name=full_param_name)
+            torch.manual_seed(per_param_seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(per_param_seed)
+            try:
+                if should_init_from_unsharded:
+                    sharded_info = param.get_sharded_info()
+                    original_param = getattr(module, param_name)
+                    full_param = torch.nn.Parameter(
+                        torch.empty(
+                            sharded_info.unsharded_shape,
+                            device=original_param.device,
+                            dtype=original_param.dtype,
+                        ),
+                        requires_grad=original_param.requires_grad,
+                    )
+                    # SpectralMuP parametrization uses module.world_size to recover global fan-in/out
+                    # from local shards. Since full_param is already global-shaped here, override to 1.
+                    old_world_size = getattr(module, "world_size", None)
+                    try:
+                        setattr(module, param_name, full_param)
+                        if old_world_size is not None:
+                            module.world_size = 1
+                        parametrizator.parametrize(param_name, module)
+
+                        # Make all TP ranks use the exact same full tensor before slicing.
+                        tp_pg = self.parallel_context.tp_pg
+                        tp_src = dist.get_global_rank(tp_pg, 0)
+                        dist.broadcast(full_param.data, src=tp_src, group=tp_pg)
+
+                        for local_global_slices_pair in sharded_info.local_global_slices_pairs:
+                            original_param.data[local_global_slices_pair.local_slices].copy_(
+                                full_param.data[local_global_slices_pair.global_slices]
+                            )
+                    finally:
+                        setattr(module, param_name, original_param)
+                        if old_world_size is not None:
+                            module.world_size = old_world_size
+                else:
+                    parametrizator.parametrize(param_name, module)
+            finally:
+                torch.random.set_rng_state(old_cpu_rng_state)
+                if old_cuda_rng_state is not None:
+                    torch.cuda.set_rng_state(old_cuda_rng_state, "cuda")
             
             # Restore original std
             parametrizator.std = original_std
