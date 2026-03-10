@@ -51,7 +51,7 @@ CUDA_DEVICE_MAX_CONNECTIONS=1 torchrun --nproc_per_node=4 examples/cola/train_co
 ## Motivation
 
 <p align="center">
-  <img src="docs/figures/Low-Rank method.png" alt="Low-Rank Bottleneck Architecture" width="440" />
+  <img src="docs/figures/lr_method.png" alt="Low-Rank Bottleneck Architecture" width="440" />
   <img src="docs/figures/motivation-breakdown.png" alt="Iter time in TP setting" width="440" />
 </p>
 <p align="center"><em>Low-Rank Bottleneck Architecture and Iter time in TP setting</em></p>
