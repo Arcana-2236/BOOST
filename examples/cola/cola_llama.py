@@ -32,7 +32,7 @@ from nanotron.generation.generate_store import AttachableStore
 from nanotron.logging import log_rank
 from nanotron.models import NanotronModel
 from nanotron.nn.activations import ACT2FN
-from nanotron.nn.layer_norm import TritonRMSNorm, DelayedTritonRMSNorm, SyncRMSNorm
+from nanotron.nn.layer_norm import TritonRMSNorm, DelayedTritonRMSNorm, OnlineRMSNorm, SyncRMSNorm
 from nanotron.parallel import ParallelContext
 from nanotron.parallel.parameters import NanotronParameter
 from nanotron.parallel.pipeline_parallel.block import PipelineBlock, TensorPointer
@@ -401,7 +401,12 @@ class MLP(nn.Module):
 
         # [seq_length, batch_size, 2 * rank]
         # print("1. contiguous: ", hidden_states.is_contiguous(), hidden_states.shape, hidden_states.stride())
-        merged_states = self.gate_up_proj0(hidden_states, s_local, rms_eps=self.rms_norm_eps)
+        merged_states = self.gate_up_proj0(
+            hidden_states,
+            s_local=s_local,
+            rms_eps=self.rms_norm_eps,
+            online_rmsnorm_recovery=s_local is not None,
+        )
         if self.layer_idx == _cola_act_trace_target_layer():
             _cola_act_trace_capture(
                 name=f"layer{self.layer_idx}.after_gate_up_proj0_linear",
@@ -819,7 +824,12 @@ class CausalSelfAttention(nn.Module, AttachableStore):
 
         torch.cuda.nvtx.range_push("qkv_proj")
         # [seq_length, batch_size, 3 * rank]
-        qkv_states = self.qkv_proj0(hidden_states, s_local, rms_eps=self.rms_norm_eps)
+        qkv_states = self.qkv_proj0(
+            hidden_states,
+            s_local=s_local,
+            rms_eps=self.rms_norm_eps,
+            online_rmsnorm_recovery=s_local is not None,
+        )
         if self.layer_idx == _cola_act_trace_target_layer():
             _cola_act_trace_capture(
                 name=f"layer{self.layer_idx}.after_qkv_proj0_linear",
@@ -1178,14 +1188,23 @@ class LlamaDecoderLayer(nn.Module):
             )
         self.rmsnorm_type = getattr(config, "rmsnorm_type", "triton")
         use_sync_rmsnorm = self.rmsnorm_type == "sync"
-        if self.rmsnorm_type not in ("triton", "sync"):
-            raise ValueError(f"Unsupported rmsnorm_type={self.rmsnorm_type}. Expected one of: 'triton', 'sync'.")
+        use_online_rmsnorm = self.rmsnorm_type == "online"
+        if self.rmsnorm_type not in ("triton", "sync", "online"):
+            raise ValueError(
+                f"Unsupported rmsnorm_type={self.rmsnorm_type}. Expected one of: 'triton', 'sync', 'online'."
+            )
 
         if self.disable_all_rmsnorm:
             self.input_layernorm = IdentityRMSNorm()
         elif use_sync_rmsnorm:
             self.input_layernorm = SyncRMSNorm(
                 hidden_size=config.hidden_size,
+                pg=tp_pg,
+                eps=config.rms_norm_eps,
+            )
+        elif use_online_rmsnorm:
+            self.input_layernorm = OnlineRMSNorm(
+                hidden_size=config.hidden_size // tp_pg.size(),
                 pg=tp_pg,
                 eps=config.rms_norm_eps,
             )
@@ -1205,6 +1224,12 @@ class LlamaDecoderLayer(nn.Module):
         elif use_sync_rmsnorm:
             self.post_attention_layernorm = SyncRMSNorm(
                 hidden_size=config.hidden_size,
+                pg=tp_pg,
+                eps=config.rms_norm_eps,
+            )
+        elif use_online_rmsnorm:
+            self.post_attention_layernorm = OnlineRMSNorm(
+                hidden_size=config.hidden_size // tp_pg.size(),
                 pg=tp_pg,
                 eps=config.rms_norm_eps,
             )
@@ -1231,7 +1256,11 @@ class LlamaDecoderLayer(nn.Module):
                 gather_last_dim=True,
             )
         # torch.cuda.nvtx.range_push("attn_layernorm")
-        hidden_states = self.input_layernorm(hidden_states)
+        if isinstance(self.input_layernorm, OnlineRMSNorm):
+            hidden_states, s_local = self.input_layernorm(hidden_states)
+        else:
+            hidden_states = self.input_layernorm(hidden_states)
+            s_local = None
         if self.layer_idx == _cola_act_trace_target_layer():
             _cola_act_trace_capture(
                 name=f"layer{self.layer_idx}.after_input_rmsnorm",
@@ -1244,7 +1273,7 @@ class LlamaDecoderLayer(nn.Module):
 
         torch.cuda.nvtx.range_push("attn")
         # output = self.attn(hidden_states=hidden_states, sequence_mask=sequence_mask, s_local=s_local)
-        output = self.attn(hidden_states=hidden_states, sequence_mask=sequence_mask)
+        output = self.attn(hidden_states=hidden_states, sequence_mask=sequence_mask, s_local=s_local)
         torch.cuda.nvtx.range_pop()
         hidden_states = output["hidden_states"]
         if self.layer_idx == _cola_act_trace_target_layer():
@@ -1259,7 +1288,11 @@ class LlamaDecoderLayer(nn.Module):
         residual = hidden_states
         # torch.cuda.nvtx.range_push("post_attention_layernorm")
         # hidden_states, s_local = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.post_attention_layernorm(hidden_states)
+        if isinstance(self.post_attention_layernorm, OnlineRMSNorm):
+            hidden_states, s_local = self.post_attention_layernorm(hidden_states)
+        else:
+            hidden_states = self.post_attention_layernorm(hidden_states)
+            s_local = None
         if self.layer_idx == _cola_act_trace_target_layer():
             _cola_act_trace_capture(
                 name=f"layer{self.layer_idx}.after_post_attention_rmsnorm",
@@ -1271,7 +1304,7 @@ class LlamaDecoderLayer(nn.Module):
 
         torch.cuda.nvtx.range_push("mlp")
         # hidden_states = self.mlp(hidden_states=hidden_states, s_local=s_local)["hidden_states"]
-        hidden_states = self.mlp(hidden_states=hidden_states)["hidden_states"]
+        hidden_states = self.mlp(hidden_states=hidden_states, s_local=s_local)["hidden_states"]
         torch.cuda.nvtx.range_pop()
         if self.layer_idx == _cola_act_trace_target_layer():
             _cola_act_trace_capture(

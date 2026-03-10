@@ -161,7 +161,11 @@ class TensorParallelRowLinear(nn.Linear):
             setattr(self, name, new_param)
 
     def forward(
-        self, x: torch.Tensor, s_local: Optional[torch.Tensor] = None, rms_eps: float = 1e-6
+        self,
+        x: torch.Tensor,
+        s_local: Optional[torch.Tensor] = None,
+        rms_eps: float = 1e-6,
+        online_rmsnorm_recovery: Optional[bool] = None,
     ) -> torch.Tensor:
         return row_linear(
             input=x,
@@ -172,6 +176,7 @@ class TensorParallelRowLinear(nn.Linear):
             async_communication=self.async_communication,
             s_local=s_local,
             rms_eps=rms_eps,
+            online_rmsnorm_recovery=online_rmsnorm_recovery,
         )
 
     def extra_repr(self) -> str:

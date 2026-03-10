@@ -4,7 +4,7 @@ from enum import Enum, auto
 from typing import Dict
 
 from nanotron.config import ModelArgs
-from nanotron.nn.layer_norm import TritonRMSNorm, DelayedTritonRMSNorm, SyncRMSNorm
+from nanotron.nn.layer_norm import TritonRMSNorm, DelayedTritonRMSNorm, OnlineRMSNorm, SyncRMSNorm
 from nanotron.parallel.tensor_parallel.nn import (
     TensorParallelColumnLinear,
     TensorParallelEmbedding,
@@ -45,6 +45,7 @@ class StandardParametrizator(Parametrizator):
             Linear: self._parametrize_nn_linear,
             TiedLinear: self._parametrize_tied_linear,
             DelayedTritonRMSNorm: self._parametrize_layer_norm,
+            OnlineRMSNorm: self._parametrize_layer_norm,
             SyncRMSNorm: self._parametrize_layer_norm,
             BatchedTensorParallelColumnLinear: self._parametrize_column_linear,
         }
@@ -113,6 +114,7 @@ class SpectralMupParametrizator(Parametrizator):
             TensorParallelColumnLinear: self._parametrize_mup_weight,
             TensorParallelRowLinear: self._parametrize_mup_weight,
             TritonRMSNorm: self._parametrize_layer_norm,
+            OnlineRMSNorm: self._parametrize_layer_norm,
             SyncRMSNorm: self._parametrize_layer_norm,
             TensorParallelEmbedding: self._parametrize_embedding,
         }
@@ -193,6 +195,7 @@ class LearningRateForSpectralMup(LearningRateForParametrizator):
             TensorParallelColumnLinear: self._get_mup_lr,
             TensorParallelRowLinear: self._get_mup_lr,
             TritonRMSNorm: self._get_global_lr,
+            OnlineRMSNorm: self._get_global_lr,
             SyncRMSNorm: self._get_global_lr,
             TensorParallelEmbedding: self._get_global_lr,
         }

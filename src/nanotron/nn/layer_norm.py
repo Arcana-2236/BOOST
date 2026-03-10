@@ -113,6 +113,59 @@ class DelayedTritonRMSNorm(nn.Module):
         ), s_local
 
 
+class OnlineRMSNorm(nn.Module):
+    """TP-local RMSNorm for online normalization with row-parallel linear.
+
+    This module implements the local part of Online RMSNorm:
+      1) s_local = sum(x_local^2)
+      2) rms_local = sqrt(s_local / d_local + eps)
+      3) x_norm_local = x_local / rms_local * gamma_local
+
+    It returns `(x_norm_local, s_local)` so downstream row-parallel linear can
+    apply online correction using global stats.
+    """
+
+    def __init__(
+        self,
+        hidden_size,
+        pg: dist.ProcessGroup,
+        eps: float = 1e-6,
+        device=None,
+        dtype=None,
+    ):
+        factory_kwargs = {"device": device, "dtype": dtype}
+        super().__init__()
+        self.eps = eps
+        self.pg = pg
+        self.weight = torch.nn.Parameter(torch.empty(hidden_size, **factory_kwargs))
+        self.register_parameter("bias", None)
+        self.reset_parameters()
+
+        mark_all_parameters_in_module_as_sharded(
+            self,
+            pg=self.pg,
+            split_config=SplitConfig(split_dim=0),
+        )
+
+    def reset_parameters(self):
+        nn.init.ones_(self.weight)
+
+    def forward(
+        self, input, residual=None, dropout_p=0.0, prenorm=False, residual_in_fp32=False, return_dropout_mask=False
+    ):
+        del residual, dropout_p, prenorm, residual_in_fp32, return_dropout_mask
+
+        x_fp32 = input.float()
+        w_fp32 = self.weight.float()
+
+        s_local = (x_fp32 * x_fp32).sum(dim=-1, keepdim=True)
+        d_local = input.shape[-1]
+        rms_local = torch.sqrt(s_local / d_local + self.eps)
+        x_norm = x_fp32 / rms_local
+        y_local = (x_norm * w_fp32).to(input.dtype)
+        return y_local, s_local
+
+
 class SyncRMSNorm(nn.Module):
     def __init__(
         self,

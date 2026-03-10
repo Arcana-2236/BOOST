@@ -23,7 +23,6 @@ from nanotron.parallel.tensor_parallel.distributed_differentiable_primitives imp
     differentiable_all_reduce_sum,
     differentiable_identity,
     differentiable_reduce_scatter_sum,
-    differentiable_coalesced_all_reduce_sum,
 )
 from nanotron.parallel.tensor_parallel.enum import TensorParallelLinearMode
 from nanotron.parallel.utils import MemoryBuffer, assert_cuda_max_connections_set_to_1
@@ -591,48 +590,55 @@ def row_linear(
     async_communication: bool,
     s_local: Optional[torch.Tensor] = None,
     rms_eps: float = 1e-6,
+    online_rmsnorm_recovery: Optional[bool] = None,
 ):
+    """Row-parallel linear with optional Online-RMSNorm recovery.
+
+    Recovery semantics (enabled when ``online_rmsnorm_recovery`` is True):
+      - input is assumed to be TP-local RMS-normalized with local stats.
+      - this function applies the post-linear correction to recover global-RMS output.
+    """
     if async_communication:
+        if online_rmsnorm_recovery:
+            raise ValueError("online_rmsnorm_recovery is not supported with async_communication=True.")
         return _RowLinearAsyncCommunication.apply(input, weight, bias, group, tp_mode)
+
+    # Backward-compat: previous behavior enabled recovery whenever s_local was passed.
+    if online_rmsnorm_recovery is None:
+        online_rmsnorm_recovery = s_local is not None
 
     out = F.linear(input, weight, bias)
 
     if tp_mode is TensorParallelLinearMode.ALL_REDUCE:
-        if s_local is not None:
-            # All-reduce #1: stats (small)
-            # IMPORTANT: do NOT mutate s_local
-            s_local_detached = s_local.detach()
-            s_global = s_local_detached.clone()
-            s_global = differentiable_all_reduce_sum(s_global, group=group)
+        if online_rmsnorm_recovery:
+            if s_local is None:
+                raise ValueError("online_rmsnorm_recovery=True requires s_local.")
+            if group.size() == 1:
+                # No TP partition => online correction is a no-op.
+                return out
 
+            # Online RMSNorm recovery: explicit step-by-step form of Algorithm 1.
+            # Step 5: H_i <- H_i * rms_local
             d_local = input.shape[-1]
+            rms_local = torch.sqrt(s_local / d_local + rms_eps)  # [*, 1]
+            out = out * rms_local.to(out.dtype)
+
+            # Step 6: [H_global, S_global] <- AllReduce([H_i, S_local])
+            # Keep it explicit as two all-reduces for clarity/stability.
+            out = differentiable_all_reduce_sum(out, group=group)  # H_global
+            s_global = differentiable_all_reduce_sum(s_local.clone(), group=group)  # S_global
+
+            # Step 7: rms_global <- sqrt(S_global / d + eps)
             d_full = d_local * group.size()
+            rms_global = torch.sqrt(s_global / d_full + rms_eps)  # [*, 1]
 
-            rstd_local = torch.rsqrt(s_local_detached / d_local + rms_eps)        # [*, 1]
-            rstd_global = torch.rsqrt(s_global.detach() / d_full + rms_eps)       # [*, 1]
-            scale = (rstd_global / rstd_local).detach()                           # [*, 1]
-            # print("rstd_local", rstd_local)
-            # print("rstd_global", rstd_global)
-            # print("scale", scale)
-
-            # Rescale local partial BEFORE output all-reduce
-            out.mul_(scale)
-
-            # All-reduce #2: output (big)
-            out = differentiable_all_reduce_sum(out, group=group)
-            # s_local_for_rstd = s_local.detach().clone()
-            # [out, s_global] =  differentiable_coalesced_all_reduce_sum([out, s_local], group=group)
-            # # scale_correction = s_local / rstd_new
-            # # Not require rstd gradient
-            # # scale_correction = rstd.detach() / rstd_new.detach()
-            # # Compute rstd_local and rstd_global 
-            # rstd_local = torch.rsqrt(s_local_for_rstd / input.shape[-1] + 1e-6)     # [*,1]
-            # rstd_global = torch.rsqrt(s_global.detach() / (input.shape[-1] * group.size()) + 1e-6)   # [*,1]
-            # scale_correction = (rstd_global / rstd_local).detach()  # no grad through correction
-            # out.mul_(scale_correction)
+            # Step 8: Y <- H_global / rms_global
+            out = out / rms_global.to(out.dtype)
         else:
             out = differentiable_all_reduce_sum(out, group=group)
     elif tp_mode is TensorParallelLinearMode.REDUCE_SCATTER:
+        if online_rmsnorm_recovery:
+            raise ValueError("online_rmsnorm_recovery is only supported for ALL_REDUCE row parallel mode.")
         out = differentiable_reduce_scatter_sum(out, group=group)
     else:
         raise ValueError(f"Got unexpected mode: {tp_mode}.")
