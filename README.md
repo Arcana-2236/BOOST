@@ -50,75 +50,75 @@ CUDA_DEVICE_MAX_CONNECTIONS=1 torchrun --nproc_per_node=4 examples/cola/train_co
 
 ## Motivation
 
+<!-- Motivation figures: keep this block -->
 <p align="center">
   <img src="docs/figures/lr_method.png" alt="Low-Rank Bottleneck Architecture" width="440" />
   <img src="docs/figures/motivation-breakdown.png" alt="Iter time in TP setting" width="440" />
 </p>
 <p align="center"><em>Low-Rank Bottleneck Architecture and Iter time in TP setting</em></p>
+<!-- End motivation figures -->
 
 Low-rank bottleneck architectures decompose dense projections into low-rank factors, reducing parameter count and computational cost while largely preserving model quality. However, when scaling such architectures to multi-GPU systems, **naïvely applying standard Tensor Parallelism (TP)** introduces new inefficiencies.
 
-First, the deeper structure of low-rank layers can introduce **additional communication synchronization points**, increasing communication overhead. Second, the **irregular placement of low-rank factors** often leads to inefficient kernel execution and fragmented computation, which reduces hardware utilization. As a result, the theoretical FLOP reduction from low-rank decomposition may not translate into real training speedups.
+First, the deeper structure of low-rank layers can introduce **additional communication synchronization points**, increasing communication overhead. Second, the **irregular placement of low-rank factors** often leads to inefficient computation kernel execution, which reduces hardware utilization. As a result, the theoretical FLOP reduction from low-rank model training may not translate into real training speedups.
 
 This repository focuses on optimizing **Tensor Parallel implementations for low-rank bottleneck LLMs**. In particular, we study how TP design affects **throughput and scalability on multi-GPU and multi-node systems**, and propose optimizations that reduce **communication overhead** and mitigate **kernel-level performance bottlenecks**.
 
 ## Methodology
 
-### CoLA Variants in This Repo
+<p align="center">
+  <img src="docs/figures/btp_main_edited.png" width="900" />
+</p>
+<p align="center"><em>Bottleneck-aware Tensor Parallelism Design</em></p>
 
-1. `BasicCoLA` (reference implementation)
-  - Entrypoint: `examples/cola/train_basic_cola.py`
-  - Model: `examples/cola/basic_cola_llama.py`
-2. `VanillaCoLA` (standard TP decomposition)
-  - Entrypoint: `examples/cola/train_vanilla_cola.py`
-  - Model: `examples/cola/vanilla_cola_llama.py`
-3. `CoLA-BTP` (grouped/batched TP kernels)
-  - Entrypoint: `examples/cola/train_cola.py`
-  - Model: `examples/cola/cola_llama.py`
+**BOOST proposes Bottleneck-aware Tensor Parallelism, which:**
 
-### Validation & Debugging Workflow
+- **shifts TP chunk boundaries** to align with the bottleneck structure
+- **shards along the large hidden dimension d** instead of the low-rank dimension r --> Improves **GEMM arithmetic intensity** and **GPU utilization**
+- performs communication on **low-rank activations [b,s,r]** rather than full hidden states [b,s,d] --> Reduces communication volume
 
-- Parity and comparison tests: `tests/boost/`
-- Paired TP debug script: `run_cola_tp_pair_debug.sh`
-- Optional profiling: `nsys profile ...`
+In addition, BOOST introduces several system-level optimizations to further improve training efficiency, including:
 
-### Experiment Protocol (Template)
+- Online RMSNorm to eliminate latency-dominated normalization collectives
+- Low-rank linear layer grouping to increase kernel efficiency and reduce launches overhead
+- Communication-free low-rank activation checkpointing to reduce memory overhead without introducing additional communication
 
-- Model/config:
-- Dataset/token budget:
-- Parallelism (`DP/TP/PP/EP`):
-- Precision:
-- Hardware:
-- Metrics tracked:
+Together, these techniques enable efficient and scalable distributed training of low-rank bottleneck LLMs.
 
 ## Results
 
-`TODO`: Replace this template with measured values.
+### System Performance
+
+TODO: Add a script of running this result
+
+| Model | GPUs | TP  | PP  | FullRank (s) | Vanilla TP (s) | BOOST (s) | Speedup vs FullRank | Speedup vs Vanilla |
+| ----- | ---- | --- | --- | ------------ | -------------- | --------- | ------------------- | ------------------ |
+| 1B    | 1    | 1   | 1   | 0.85         | 0.56           | 0.59      | 1.44×               | 0.95×              |
+| 3B    | 2    | 2   | 1   | 1.14         | 1.41           | 0.78      | 1.46×               | **1.81×**          |
+| 7B    | 4    | 4   | 1   | 1.06         | 1.64           | 0.72      | 1.47×               | **2.28×**          |
+| 13B   | 8    | 4   | 2   | 2.07         | 2.42           | 1.30      | 1.59×               | **1.86×**          |
 
 
-| Experiment         | Model    | DP/TP/PP/EP | Tokens | Throughput | Loss | Notes |
-| ------------------ | -------- | ----------- | ------ | ---------- | ---- | ----- |
-| Baseline full-rank | Llama-1B |             |        |            |      |       |
-| BasicCoLA          | Llama-1B |             |        |            |      |       |
-| VanillaCoLA        | Llama-1B |             |        |            |      |       |
-| CoLA-BTP           | Llama-1B |             |        |            |      |       |
+### Loss Curve 
+<p align="center">
+  <img src="docs/figures/Loss Curve.png" width="900" />
+</p>
+<p align="center"></p>
+
+### Ablation study
 
 
 ## Citation & Acknowledgement
 
-### Citation
-
-`TODO`: Add your paper/preprint citation.
-
 ```bibtex
-@misc{boost_cola_nanotron,
-  title={BOOST: CoLA and Tensor Parallel Training on Nanotron},
-  author={TODO},
-  year={2026},
-  howpublished={\url{https://github.com/Arcana-2236/nanotron}}
+@article{wang2025boost,
+  title={BOOST: BOttleneck-Optimized Scalable Training Framework for Low-Rank Large Language Models},
+  author={Wang, Zhengyang and Liu, Ziyue and Zhang, Ruijie and Maurya, Avinash and Hovland, Paul and Nicolae, Bogdan and Cappello, Franck and Zhang, Zheng},
+  journal={arXiv preprint arXiv:2512.12131},
+  year={2025}
 }
 ```
 
 ### Acknowledgement
 
-This project builds on the Nanotron ecosystem and open-source LLM training work from the broader community, including Hugging Face Nanotron, NVIDIA Megatron-LM/Apex, DeepSpeed, and FlashAttention contributors.
+This project builds on the Nanotron ecosystem and open-source LLM training work from the broader community, including Hugging Face Nanotron, NVIDIA Megatron-LM/Apex, and FlashAttention contributors.
