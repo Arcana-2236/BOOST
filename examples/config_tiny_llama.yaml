@@ -1,5 +1,5 @@
 checkpoints:
-  checkpoint_interval: 10
+  checkpoint_interval: 100
   checkpoints_path: checkpoints
   checkpoints_path_is_shared_file_system: false
   resume_checkpoint_path: null
@@ -9,8 +9,8 @@ data_stages:
     dataset:
       dataset_overwrite_cache: false
       dataset_processing_num_proc_per_process: 1
-      hf_dataset_config_name: null
-      hf_dataset_or_datasets: stas/openwebtext-10k
+      hf_dataset_or_datasets: wikitext
+      hf_dataset_config_name: wikitext-2-raw-v1
       hf_dataset_splits: train
       text_column_name: text
     num_loading_workers: 1
@@ -21,8 +21,8 @@ data_stages:
     dataset:
       dataset_overwrite_cache: false
       dataset_processing_num_proc_per_process: 1
-      hf_dataset_config_name: null
-      hf_dataset_or_datasets: stas/openwebtext-10k
+      hf_dataset_or_datasets: wikitext
+      hf_dataset_config_name: wikitext-2-raw-v1
       hf_dataset_splits: train
       text_column_name: text
     num_loading_workers: 1
@@ -52,9 +52,9 @@ model:
     bos_token_id: 1
     eos_token_id: 2
     hidden_act: silu
-    hidden_size: 16
+    hidden_size: 64
     initializer_range: 0.02
-    intermediate_size: 64
+    intermediate_size: 256
     is_llama_config: true
     max_position_embeddings: 256
     num_attention_heads: 4
@@ -89,11 +89,11 @@ optimizer:
 parallelism:
   dp: 2
   expert_parallel_size: 1
-  pp: 2
+  pp: 1
   pp_engine: 1f1b
   tp: 2
-  tp_linear_async_communication: true
-  tp_mode: REDUCE_SCATTER
+  tp_linear_async_communication: false
+  tp_mode: ALL_REDUCE
 profiler: null
 tokenizer:
   tokenizer_max_length: null
@@ -105,5 +105,5 @@ tokens:
   limit_val_batches: 0
   micro_batch_size: 2
   sequence_length: 256
-  train_steps: 15
+  train_steps: 9
   val_check_interval: -1
