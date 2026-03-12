@@ -50,13 +50,7 @@ CUDA_DEVICE_MAX_CONNECTIONS=1 torchrun --nproc_per_node=4 examples/cola/train_co
 
 ## Motivation
 
-<!-- Motivation figures: keep this block -->
-<p align="center">
-  <img src="docs/figures/lr_method.png" alt="Low-Rank Bottleneck Architecture" width="440" />
-  <img src="docs/figures/motivation-breakdown.png" alt="Iter time in TP setting" width="440" />
-</p>
-<p align="center"><em>Low-Rank Bottleneck Architecture and Iter time in TP setting</em></p>
-<!-- End motivation figures -->
+*Low-Rank Bottleneck Architecture and Iter time in TP setting*
 
 Low-rank bottleneck architectures decompose dense projections into low-rank factors, reducing parameter count and computational cost while largely preserving model quality. However, when scaling such architectures to multi-GPU systems, **naïvely applying standard Tensor Parallelism (TP)** introduces new inefficiencies.
 
@@ -66,10 +60,7 @@ This repository focuses on optimizing **Tensor Parallel implementations for low-
 
 ## Methodology
 
-<p align="center">
-  <img src="docs/figures/btp_main_edited.png" width="900" />
-</p>
-<p align="center"><em>Bottleneck-aware Tensor Parallelism Design</em></p>
+*Bottleneck-aware Tensor Parallelism Design*
 
 **BOOST proposes Bottleneck-aware Tensor Parallelism, which:**
 
@@ -89,7 +80,10 @@ Together, these techniques enable efficient and scalable distributed training of
 
 ### System Performance
 
-TODO: Add a script of running this result
+```bash
+bash ./run_iter_compare.sh
+```
+
 
 | Model | GPUs | TP  | PP  | FullRank (s) | Vanilla TP (s) | BOOST (s) | Speedup vs FullRank | Speedup vs Vanilla |
 | ----- | ---- | --- | --- | ------------ | -------------- | --------- | ------------------- | ------------------ |
@@ -99,13 +93,27 @@ TODO: Add a script of running this result
 | 13B   | 8    | 4   | 2   | 2.07         | 2.42           | 1.30      | 1.59×               | **1.86×**          |
 
 
-### Loss Curve 
-<p align="center">
-  <img src="docs/figures/Loss Curve.png" width="900" />
-</p>
-<p align="center"></p>
+### Loss Curve
 
 ### Ablation study
+
+#### GEMM Kernel Efficiency (LLaMA-7B, Batch Size = 4)
+
+
+| Method     | Attn HFU (%) | MLP HFU (%) | Attn GEMM Time (ms) | MLP GEMM Time (ms) |
+| ---------- | ------------ | ----------- | ------------------- | ------------------ |
+| Vanilla-TP | ~59          | ~59         | ~0.20               | ~0.90              |
+| **BTP**    | **~70**      | **~75**     | **~0.16**           | **~0.50**          |
+
+
+#### Communication Efficiency (LLaMA-7B, Batch Size = 4, Seq Length = 4096)
+
+
+| Method      | Communication Volume (GB) | Communication Time (ms) | Reduction vs Vanilla |
+| ----------- | ------------------------- | ----------------------- | -------------------- |
+| FullRank-TP | ~0.25                     | ~2.01                   | –                    |
+| Vanilla-TP  | ~1.32                     | ~9.87                   | 1.0×                 |
+| **TP**      | **~0.22**                 | **~1.85**               | **5.3× faster**      |
 
 
 ## Citation & Acknowledgement

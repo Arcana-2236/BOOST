@@ -11,14 +11,15 @@ data_stages:
       dataset_processing_num_proc_per_process: 1
       # hf_dataset_config_name: null
       # hf_dataset_or_datasets: stas/openwebtext-10k
-      # hf_dataset_or_datasets: wikitext
-      # hf_dataset_config_name: wikitext-2-raw-v1
+      hf_dataset_or_datasets: wikitext
+      hf_dataset_config_name: wikitext-2-raw-v1
       # hf_dataset_or_datasets: /eagle/projects/TensorCompress/datasets/c4/seq_len_4096
       # hf_dataset_config_name: null
-      hf_dataset_or_datasets: /eagle/TensorCompress/seq_len_4096
+      # hf_dataset_or_datasets: /eagle/TensorCompress/seq_len_4096
       hf_dataset_splits: train
       text_column_name: text
-      load_from_disk: true
+      # load_from_disk: true
+      load_from_disk: false
     num_loading_workers: 1
     seed: 42
   name: Stable Training Stage
