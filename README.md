@@ -50,7 +50,11 @@ CUDA_DEVICE_MAX_CONNECTIONS=1 torchrun --nproc_per_node=4 examples/cola/train_co
 
 ## Motivation
 
-*Low-Rank Bottleneck Architecture and Iter time in TP setting*
+<p align="center">
+  <img src="docs/figures/lr_method.png" alt="Low-Rank Bottleneck Architecture" width="440" />
+  <img src="docs/figures/motivation-breakdown.png" alt="Iter time in TP setting" width="440" />
+</p>
+<p align="center"><em>Low-Rank Bottleneck Architecture and Iter time in TP setting</em></p>
 
 Low-rank bottleneck architectures decompose dense projections into low-rank factors, reducing parameter count and computational cost while largely preserving model quality. However, when scaling such architectures to multi-GPU systems, **naïvely applying standard Tensor Parallelism (TP)** introduces new inefficiencies.
 
@@ -60,7 +64,11 @@ This repository focuses on optimizing **Tensor Parallel implementations for low-
 
 ## Methodology
 
-*Bottleneck-aware Tensor Parallelism Design*
+<p align="center">
+  <img src="docs/figures/btp_main_edited.png" width="900" />
+</p>
+<p align="center"><em>Bottleneck-aware Tensor Parallelism Design</em></p>
+
 
 **BOOST proposes Bottleneck-aware Tensor Parallelism, which:**
 
@@ -94,6 +102,11 @@ bash ./run_iter_compare.sh
 
 
 ### Loss Curve
+
+<p align="center">
+  <img src="docs/figures/Loss Curve.png" width="900" />
+</p>
+<p align="center"></p>
 
 ### Ablation study
 
