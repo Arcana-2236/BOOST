@@ -1,0 +1,18 @@
+# Repro metadata (documented, not enforced by pip):
+# Python: 3.10
+# CUDA build used by PyTorch: 12.1 (cu121 wheel)
+#
+# Usage after `conda activate /home/$USER/conda-envs/nanotron-py310`:
+#   python -m pip install -U pip setuptools wheel
+#   python -m pip install -r requirements.txt
+#   python -m pip install --no-build-isolation --no-cache-dir "flash-attn==2.7.4.post1"
+
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+torch==2.5.1+cu121
+transformers==4.56.1
+datasets
+triton
+psutil
+wandb
+-e .

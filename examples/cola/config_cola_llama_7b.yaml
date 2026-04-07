@@ -57,6 +57,7 @@ model:
     pretraining_tp: 1
     attn_rank: 1024
     mlp_rank: 1024
+    rmsnorm_type: sync
     rms_norm_eps: 1.0e-06
     rope_scaling: null
     tie_word_embeddings: true
@@ -89,6 +90,7 @@ parallelism:
   tp: 4
   tp_linear_async_communication: false
   tp_mode: ALL_REDUCE
+  recompute_layer: false
 profiler: null
 tokenizer:
   tokenizer_max_length: null

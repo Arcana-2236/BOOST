@@ -33,7 +33,7 @@ run_cmd "btp_cola7b" \
 # 3) Vanilla CoLA 1B TP=4 run
 run_cmd "vanilla_cola_7b" \
   torchrun --nproc_per_node=4 examples/cola/train_vanilla_cola.py \
-  --config-file examples/cola/config_cola_llama_7b.yaml
+  --config-file examples/cola/config_cola_llama_7b_vanillaTP.yaml
 
 python - "$OUT_DIR" << 'PY'
 import sys

@@ -1186,7 +1186,7 @@ class LlamaDecoderLayer(nn.Module):
                 level=logging.WARNING,
                 rank=0,
             )
-        self.rmsnorm_type = getattr(config, "rmsnorm_type", "triton")
+        self.rmsnorm_type = getattr(config, "rmsnorm_type", "sync")
         use_sync_rmsnorm = self.rmsnorm_type == "sync"
         use_online_rmsnorm = self.rmsnorm_type == "online"
         if self.rmsnorm_type not in ("triton", "sync", "online"):
