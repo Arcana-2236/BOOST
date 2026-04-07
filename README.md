@@ -12,7 +12,25 @@
 
 We provide two setup options.
 
-Option 1: NGC container.
+Option 1: Conda environment.
+We provide a conda-based setup for local or cluster environments. Our validated software stack uses Python 3.10, PyTorch 2.5.1+cu121, and transformers==4.56.1.
+
+```bash
+# Clone the repository on the host
+git clone https://github.com/Arcana-2236/BOOST.git
+cd BOOST
+
+# Create and activate the conda env
+conda create -y -n boost python=3.10 pip
+conda activate boost
+
+# Env setup
+python -m pip install -U pip setuptools wheel
+python -m pip install -r requirements.txt
+python -m pip install --no-build-isolation --no-cache-dir "flash-attn==2.7.4.post1"
+```
+
+Option 2: NGC container.
 
 ```bash
 # Clone the repository on the host
@@ -31,27 +49,9 @@ docker run --rm --gpus all \
 
 # Env setup, Inside the container
 cd /workspace/BOOST
-pip install datasets transformers
+pip install datasets transformers wandb
 pip install triton "flash-attn==2.7.4.post1" --no-build-isolation
 pip install -e .
-```
-
-Option 2: Conda environment.
-We also provide a conda-based setup for local or cluster environments. Our validated software stack uses Python 3.10, PyTorch 2.5.1+cu121, and transformers==4.56.1.
-
-```bash
-# Clone the repository on the host
-git clone https://github.com/Arcana-2236/BOOST.git
-cd BOOST
-
-# Create and activate the conda env
-conda create -y -n boost python=3.10 pip
-conda activate boost
-
-# Env setup
-python -m pip install -U pip setuptools wheel
-python -m pip install -r requirements.txt
-python -m pip install --no-build-isolation --no-cache-dir "flash-attn==2.7.4.post1"
 ```
 
 ## Quickstart
@@ -144,7 +144,9 @@ In general:
 ### End to end System Performance (Fig. 5)
 
 ```bash
-bash ./run_iter_compare.sh
+bash ./run_iter_compare_mbz4.sh
+# If using 40GB A100, can use mbz1 as following, but with less significant speedup
+bash ./run_iter_compare_mbz1.sh
 ```
 
 
