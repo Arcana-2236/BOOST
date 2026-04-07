@@ -1,0 +1,16 @@
+RMSNorm Runtime Comparison (max-rank latency)
+================================================================================
+world_size=4, dtype=torch.bfloat16, seq_len=4096, hidden_size=4096, hidden_local=1024
+warmup=10, iters=50, batch_sizes=[1, 4]
+
+Batch    SyncRMSNorm (ms)   OnlineRMSNorm (ms)   Speedup (Sync/Online)   
+-------------------------------------------------------------------------
+1        0.3754             0.1446               2.595                   
+4        0.5417             0.5226               1.037                   
+
+RMSNorm Throughput (per-rank tokens/s)
+================================================================================
+Batch    Sync Tokens/s    Online Tokens/s    Seq Len    Hidden Local  
+----------------------------------------------------------------------
+1        10910665.42      28317832.12        4096       1024          
+4        30243746.00      31348114.93        4096       1024          

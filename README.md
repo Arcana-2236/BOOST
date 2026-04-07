@@ -193,6 +193,16 @@ torchrun --nproc_per_node=4 benchmarking/communication/communication_eff.py
 | Vanilla-TP  | ~1.32                     | ~9.87                   | 1.0×                 |
 | **BTP**     | **~0.22**                 | **~1.85**               | **5.3× faster**      |
 
+#### RMSNorm Type (LLaMA-7B, Seq Length = 4096) (Fig. 7)
+```bash
+torchrun --nproc_per_node=4 benchmarking/computation/rmsnorm_eff.py
+```
+
+| Batch | SyncRMSNorm (ms) | OnlineRMSNorm (ms) | Speedup (Sync/Online) |
+| ----- | ---------------- | ------------------ | --------------------- |
+| 1     | 0.3754           | 0.1446             | 2.595×                |
+| 4     | 0.5417           | 0.5226             | 1.037×                |
+
 
 #### Grouping Methods (LLaMA-7B, Batch Size = 1, Seq Length = 4096) (Tab. 2)
 
