@@ -10,7 +10,9 @@
 
 ## Setup
 
-Use the NGC PyTorch container to keep dependencies consistent and avoid host environment drift.
+We provide two setup options.
+
+Option 1: NGC container.
 
 ```bash
 # Clone the repository on the host
@@ -30,8 +32,26 @@ docker run --rm --gpus all \
 # Env setup, Inside the container
 cd /workspace/BOOST
 pip install datasets transformers
-pip install triton "flash-attn==2.5.1.post1" --no-build-isolation
+pip install triton "flash-attn==2.7.4.post1" --no-build-isolation
 pip install -e .
+```
+
+Option 2: Conda environment.
+We also provide a conda-based setup for local or cluster environments. Our validated software stack uses Python 3.10, PyTorch 2.5.1+cu121, and transformers==4.56.1.
+
+```bash
+# Clone the repository on the host
+git clone https://github.com/Arcana-2236/BOOST.git
+cd BOOST
+
+# Create and activate the conda env
+conda create -y -n boost python=3.10 pip
+conda activate boost
+
+# Env setup
+python -m pip install -U pip setuptools wheel
+python -m pip install -r requirements.txt
+python -m pip install --no-build-isolation --no-cache-dir "flash-attn==2.7.4.post1"
 ```
 
 ## Quickstart
@@ -46,6 +66,12 @@ CUDA_DEVICE_MAX_CONNECTIONS=1 torchrun --nproc_per_node=4 run_train.py --config-
 
 ```bash
 CUDA_DEVICE_MAX_CONNECTIONS=1 torchrun --nproc_per_node=4 examples/cola/train_cola.py --config-file examples/cola/config_tiny_cola_llama.yaml
+```
+
+### 3) CoLA-VanillaTP run
+
+```bash
+CUDA_DEVICE_MAX_CONNECTIONS=1 torchrun --nproc_per_node=4 examples/cola/train_vanilla_cola.py --config-file examples/cola/config_tiny_cola_llama.yaml
 ```
 
 ## Motivation
@@ -84,9 +110,38 @@ In addition, BOOST introduces several system-level optimizations to further impr
 
 Together, these techniques enable efficient and scalable distributed training of low-rank bottleneck LLMs.
 
-## Results
+## Results and Reproduce Procedure
 
-### System Performance
+### Configuration Guide
+
+Each experiment script is paired with a YAML configuration file that specifies the model scale, parallelism setting, and optimization flags. In practice, reproducing a paper result mainly requires selecting the corresponding model size and parallelism degree, and enabling or disabling the relevant BOOST-specific optimizations.
+
+The main experiment settings are controlled through YAML config files. The most important parameters used in the reported experiments are summarized below.
+
+
+| Parameter                        | Description                                                                | Example                                              |
+| -------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `TP strategy`                    | Tensor parallel strategy used in the experiment (FullRank / Vanilla / BTP) | Determined by the launch script under `examples/`    |
+| `model_size`                     | Model size used in the experiment                                          | Determined by the YAML config file under `examples/` |
+| `model_config`                   | Detailed model architecture configuration                                  | `hidden_size: 4096`                                  |
+| `tp_size`                        | Tensor parallel degree                                                     | `4`                                                  |
+| `pp_size`                        | Pipeline parallel degree                                                   | `1`                                                  |
+| `sequence_length`                | Training sequence length                                                   | `4096`                                               |
+| `micro_batch_size`               | Per-GPU micro-batch size                                                   | `4`                                                  |
+| `batch_accumulation_per_replica` | Gradient accumulation steps per replica                                    | `1`                                                  |
+| `attn_rank`                      | Bottleneck / low-rank dimension for attention projections                  | Usually `hidden_size / 4`                            |
+| `mlp_rank`                       | Bottleneck / low-rank dimension for MLP projections                        | Usually `hidden_size / 4`                            |
+| `rmsnorm_type`                   | RMSNorm implementation used in the experiment                              | `triton`, `sync`, or `online`                        |
+| `recompute_layer`                | Whether activation checkpointing is enabled                                | `false`                                              |
+
+
+In general:
+
+- **FullRank baseline** uses the standard full-rank model configuration.
+- **Vanilla low-rank TP** enables the low-rank architecture without BTP.
+- **BOOST / BTP** enables the low-rank architecture together with Bottleneck-aware Tensor Parallelism and other BOOST optimizations as needed.
+
+### End to end System Performance (Fig. 5)
 
 ```bash
 bash ./run_iter_compare.sh
@@ -108,9 +163,15 @@ bash ./run_iter_compare.sh
 </p>
 <p align="center"></p>
 
+We use the C4 dataset and the LLaMA-2 tokenizer for preprocessing. The detailed hyperparameter settings can be found in train_btp_cola_tiny_debug_polaris.sh.
+
 ### Ablation study
 
-#### GEMM Kernel Efficiency (LLaMA-7B, Batch Size = 4)
+#### GEMM Kernel Efficiency (LLaMA-7B, Batch Size = 4) (Fig. 6)
+
+```bash
+python3 benchmarking/computation/comp_efficiency.py
+```
 
 
 | Method     | Attn HFU (%) | MLP HFU (%) | Attn GEMM Time (ms) | MLP GEMM Time (ms) |
@@ -119,15 +180,48 @@ bash ./run_iter_compare.sh
 | **BTP**    | **~70**      | **~75**     | **~0.16**           | **~0.50**          |
 
 
-#### Communication Efficiency (LLaMA-7B, Batch Size = 4, Seq Length = 4096)
+#### Communication Efficiency (LLaMA-7B, Batch Size = 4, Seq Length = 4096) (Fig. 7)
+
+```bash
+torchrun --nproc_per_node=4 benchmarking/communication/communication_eff.py
+```
 
 
 | Method      | Communication Volume (GB) | Communication Time (ms) | Reduction vs Vanilla |
 | ----------- | ------------------------- | ----------------------- | -------------------- |
 | FullRank-TP | ~0.25                     | ~2.01                   | –                    |
 | Vanilla-TP  | ~1.32                     | ~9.87                   | 1.0×                 |
-| **TP**      | **~0.22**                 | **~1.85**               | **5.3× faster**      |
+| **BTP**     | **~0.22**                 | **~1.85**               | **5.3× faster**      |
 
+
+#### Grouping Methods (LLaMA-7B, Batch Size = 1, Seq Length = 4096) (Tab. 2)
+
+```bash
+python3 benchmarking/computation/grouping_comp_eff.py
+torchrun --nproc_per_node=4 benchmarking/communication/grouping_comm_eff.py
+```
+
+
+| Block / Kernel  | Non Grouped Time (us) | Grouped Time (us) | Speedup |
+| --------------- | --------------------- | ----------------- | ------- |
+| MLP1 Comp       | 355                   | 292               | 1.22×   |
+| MLP1 Comm       | 266                   | 218               | 1.22×   |
+| QKV Comp        | 391                   | 255               | 1.53×   |
+| QKV Comm        | 406                   | 288               | 1.41×   |
+| Layerwise Total | 2773                  | 2395              | 1.16×   |
+
+
+### Notes on Runtime Variance
+
+The reported results were validated in our target environment on A100 80GB GPUs (micro batch size = 4, seqlen = 4096). Absolute runtime and speedup magnitude may vary across hardware and software environments, although the overall performance trend should remain consistent.
+
+In particular, we observed that experiments on A100 40GB GPUs may show smaller end-to-end speedups than those reported in the paper. A main reason is that the reduced memory budget often requires using a smaller micro-batch size (e.g., batch size = 1 instead of 4). Under these settings, GPU kernels are generally less efficient, hardware utilization is lower, and kernel launch overhead becomes a larger fraction of the total runtime.
+
+This effect is especially noticeable for low-rank bottleneck architectures, which are deeper and contain more smaller kernel invocations than the corresponding full-rank baseline. As a result, with smaller batch sizes on 40GB GPUs, the relative speedup of BOOST may decrease even though the same qualitative ordering among FullRank, Vanilla low-rank TP, and BTP is preserved.
+
+We therefore recommend using the pinned software environment and the target hardware configuration described in this README when reproducing the reported numbers as closely as possible.
+
+To help readers compare against our validated environment, we also provide the reference logging results collected on our machine under the `./logging` directory.
 
 ## Citation & Acknowledgement
 
