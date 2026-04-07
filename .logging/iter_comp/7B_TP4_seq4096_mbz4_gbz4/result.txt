@@ -1,0 +1,4 @@
+Average iteration time (ms) after 2-step warmup:
+- fr_llama7b: 1130.00 ms over 7 iterations
+- btp_cola7b: 767.00 ms over 7 iterations
+- vanilla_cola_7b: 2110.00 ms over 7 iterations

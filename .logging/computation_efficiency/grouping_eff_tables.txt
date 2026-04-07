@@ -1,0 +1,23 @@
+Grouping Efficiency Summary
+================================================================================
+Device: cuda
+dtype: torch.bfloat16
+batch_sizes=[1, 4], seq_len=4096, hidden_size=4096, intermediate_size=11008, rank=1024, tp_world_size=4
+
+Batch    Workload   Variant        Avg Latency (ms)   Estimated TFLOPs   Estimated TFLOPs/s
+-------------------------------------------------------------------------------------------
+1        QKV        non-grouped    0.401              0.052              128.680           
+1        QKV        grouped        0.259              0.052              199.014           
+1        MLP        non-grouped    0.362              0.063              175.117           
+1        MLP        grouped        0.298              0.063              212.371           
+4        QKV        non-grouped    0.893              0.206              230.926           
+4        QKV        grouped        0.834              0.206              247.278           
+4        MLP        non-grouped    1.064              0.253              238.155           
+4        MLP        grouped        1.029              0.253              246.282           
+
+Batch    Workload   Speedup (Non-grouped / Grouped)     
+--------------------------------------------------------
+1        QKV        1.547                               
+1        MLP        1.213                               
+4        QKV        1.071                               
+4        MLP        1.034                               

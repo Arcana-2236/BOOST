@@ -1,0 +1,24 @@
+Grouping Communication Efficiency Table
+================================================================================
+seq_len=4096, hidden_size=4096, intermediate_size=11008, rank=1024, tp=4
+dtype=torch.bfloat16, warmup=5, iters=20, batch_sizes=[1, 4]
+
+Batch    Workload   Variant        Calls    Payload (MB)   Avg Latency (us)  
+-----------------------------------------------------------------------------
+1        Attn       non-grouped    3        24.00          353.44            
+1        Attn       grouped        1        24.00          233.71            
+1        MLP        non-grouped    2        16.00          222.16            
+1        MLP        grouped        1        16.00          184.63            
+4        Attn       non-grouped    3        96.00          884.77            
+4        Attn       grouped        1        96.00          769.10            
+4        MLP        non-grouped    2        64.00          590.48            
+4        MLP        grouped        1        64.00          550.22            
+
+Grouping Communication Speedup Table
+================================================================================
+Batch    Workload   Speedup (Non-grouped / Grouped)     
+--------------------------------------------------------
+1        Attn       1.512                               
+1        MLP        1.203                               
+4        Attn       1.150                               
+4        MLP        1.073                               
