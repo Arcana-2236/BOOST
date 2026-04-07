@@ -1,6 +1,6 @@
 #!/bin/bash -l
-#PBS -N boost_cola_tiny_debug
-#PBS -A TensorCompress
+#PBS -N 
+#PBS -A 
 #PBS -q debug
 #PBS -l select=1:ncpus=64:ngpus=4
 #PBS -l walltime=00:30:00
@@ -30,7 +30,7 @@ echo "PBS_NODEFILE:"
 cat "$PBS_NODEFILE"
 
 # --- Tiny debug configuration ---
-TP=2
+TP=4
 PP=1
 EP=1
 MODEL_ARCH=${MODEL_ARCH:-"cola"}
@@ -79,7 +79,6 @@ mpiexec -n "$NNODES" -ppn 1 --hostfile "$PBS_NODEFILE" \
     cd /home/$USER/nanotron
     NODE_RANK=\${PMI_RANK:-0}
 
-    export WANDB_API_KEY=\"8bd1f610ea32c79e0fbb32d3ec8511881a434c12\"
     wandb online
     wandb status
 
@@ -89,8 +88,8 @@ mpiexec -n "$NNODES" -ppn 1 --hostfile "$PBS_NODEFILE" \
       --node_rank=\$NODE_RANK \
       --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT \
       -- examples/cola/train_cola.py --config-file examples/cola/config_${CONFIG_NAME}.yaml \
-      --hf-dataset-or-datasets /eagle/TensorCompress/seq_len_4096 --run $RUN_NAME \
-      --entity zhengyangwang-university-of-california-santa-barbara --project boost \
+      --hf-dataset-or-datasets x --run $RUN_NAME \
+      --entity x --project boost \
       --lr $LR --micro-batch-size $BZ --batch-accumulation-per-replica $((TBZ / (BZ * DP))) \
       --lr-warmup-steps $WU --tp $TP --pp $PP --dp $DP --train-steps $TRAIN_STEPS \
       $continue_from_flag
